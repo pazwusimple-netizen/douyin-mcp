@@ -1,7 +1,50 @@
-"""配置管理模块 — 从环境变量读取所有配置。"""
+"""配置管理模块 — 从环境变量和本地 .env 文件读取配置。"""
 
 import os
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _strip_optional_quotes(value: str) -> str:
+    """移除 .env 值外层成对引号。"""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _load_env_file(env_file: Path, override: bool = False) -> None:
+    """读取简单的 KEY=VALUE 文件到环境变量。"""
+    if not env_file.exists() or not env_file.is_file():
+        return
+
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].strip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+
+        if not override and key in os.environ:
+            continue
+        os.environ[key] = _strip_optional_quotes(value)
+
+
+def _load_project_env() -> None:
+    """按优先级加载项目本地环境文件。"""
+    _load_env_file(PROJECT_ROOT / ".env.local", override=False)
+    _load_env_file(PROJECT_ROOT / ".env", override=False)
+
+
+_load_project_env()
 
 
 def _default_cookie_path() -> Path:
@@ -84,7 +127,6 @@ AUDIO_CHUNK_MAX_FILE_SIZE_MB = int(os.getenv("AUDIO_CHUNK_MAX_FILE_SIZE_MB", "45
 COOKIE_STRING = os.getenv("DOUYIN_COOKIE", "").strip()
 
 # 方式2：从文件读取（默认放用户目录；兼容老项目根目录）
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_COOKIE_PATH = _default_cookie_path()
 LEGACY_COOKIE_PATH = PROJECT_ROOT / "cookies.txt"
 COOKIE_PATH_FROM_ENV = "DOUYIN_COOKIE_PATH" in os.environ

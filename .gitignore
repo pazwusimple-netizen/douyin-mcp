@@ -12,7 +12,10 @@ wheels/
 # Sensitive / credentials
 cookies.txt
 .env
+.env.local
+.env.*
 *.env
+!.env.example
 
 # IDE
 .idea/

@@ -60,6 +60,35 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.zshrc
 ```
 
+### 1.1 可选：本地 `.env.local` 配置
+
+如果你不想每次手动 `export` 变量，可以直接在项目根目录放一个 `.env.local`。
+
+先复制示例文件：
+
+```bash
+cp .env.example .env.local
+```
+
+然后只改你需要的字段，例如：
+
+```bash
+ASR_PROVIDER=volcengine
+VOLCENGINE_APP_ID=你的真实AppID
+VOLCENGINE_ACCESS_TOKEN=你的真实AccessToken
+VOLCENGINE_MODEL=bigmodel
+VOLCENGINE_RESOURCE_ID=volc.bigasr.auc_turbo
+VOLCENGINE_API_URL=https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash
+```
+
+加载优先级是：
+
+1. 系统环境变量
+2. 项目根目录 `.env.local`
+3. 项目根目录 `.env`
+
+`.env.local` 默认不会上传到 GitHub。
+
 ### 2. 登录抖音
 
 ```bash
@@ -101,7 +130,12 @@ pwd
 codex mcp add douyin -- /Users/你的用户名/.local/bin/uv --directory /项目完整路径/douyinmcp run main.py
 ```
 
-如果你还要用视频转文字，再额外带上 ASR 环境变量。以火山引擎为例：
+如果你还要用视频转文字，有两种方式：
+
+- 在 MCP 配置里直接传 ASR 环境变量
+- 或者先在项目根目录写 `.env.local`
+
+如果你想直接在 MCP 配置里传，以火山引擎为例：
 
 ```bash
 codex mcp add douyin \
@@ -166,6 +200,8 @@ claude mcp add douyin \
 ```bash
 DOUYIN_COOKIE='sessionid=abc; ttwid=xyz' uv run main.py
 ```
+
+如果你更习惯本地文件方式，也可以把这些配置写到 `.env.local`，项目启动时会自动读取。
 
 ## 视频转文字说明
 
