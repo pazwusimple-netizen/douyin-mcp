@@ -51,6 +51,18 @@ class ASRNotConfiguredError(DouyinMCPError):
         )
 
 
+class OCRNotConfiguredError(DouyinMCPError):
+    """OCR 引擎未安装或不可用"""
+
+    def __init__(self, provider: str = ""):
+        msg = f"OCR Provider '{provider}' 不可用。" if provider else "OCR 不可用。"
+        super().__init__(
+            msg,
+            "请安装 OCR 可选依赖：uv sync --extra ocr，"
+            "或检查 OCR_PROVIDER 配置是否正确。",
+        )
+
+
 class VideoDurationExceededError(DouyinMCPError):
     """视频超出时长限制"""
 

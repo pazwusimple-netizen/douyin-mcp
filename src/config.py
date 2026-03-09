@@ -68,10 +68,16 @@ OPENAI_API_URL = os.getenv(
 )
 
 # ====== 视频处理配置 ======
-# 最大处理视频时长（秒），默认10分钟
-MAX_AUDIO_DURATION = int(os.getenv("MAX_AUDIO_DURATION", "600"))
+# 最大处理视频时长（秒），默认2小时
+MAX_AUDIO_DURATION = int(os.getenv("MAX_AUDIO_DURATION", "7200"))
 # 音频输出码率（kbps），64k对语音识别足够
 AUDIO_BITRATE = os.getenv("AUDIO_BITRATE", "64k")
+# 超过该时长时自动切片转写（秒）
+AUDIO_CHUNK_THRESHOLD = int(os.getenv("AUDIO_CHUNK_THRESHOLD", "600"))
+# 每段切片时长（秒）
+AUDIO_CHUNK_DURATION = int(os.getenv("AUDIO_CHUNK_DURATION", "480"))
+# 超过该体积时自动切片转写（MB）
+AUDIO_CHUNK_MAX_FILE_SIZE_MB = int(os.getenv("AUDIO_CHUNK_MAX_FILE_SIZE_MB", "45"))
 
 # ====== Cookie 配置 ======
 # 方式1：环境变量直传 Cookie 字符串（优先级最高，适合 Docker/CI）
@@ -98,3 +104,6 @@ TRANSCRIPT_DIR = os.getenv(
     "DOUYIN_TRANSCRIPT_DIR",
     str(_default_transcript_dir()),
 )
+
+# ====== OCR 配置 ======
+OCR_PROVIDER = os.getenv("OCR_PROVIDER", "rapidocr").strip().lower()

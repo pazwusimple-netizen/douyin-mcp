@@ -5,6 +5,61 @@ from typing import Optional
 from enum import Enum, IntEnum
 
 
+def _pick_first_url(image_data: dict) -> str:
+    """从抖音图片对象中提取最合适的 URL。"""
+    candidate_paths = [
+        ("display_image", "url_list"),
+        ("owner_watermark_image", "url_list"),
+        ("download_url", "url_list"),
+        ("origin_url", "url_list"),
+        ("label_large", "url_list"),
+    ]
+
+    for outer_key, inner_key in candidate_paths:
+        value = image_data.get(outer_key, {})
+        if isinstance(value, dict) and value.get(inner_key):
+            return value[inner_key][0]
+
+    if image_data.get("url_list"):
+        return image_data["url_list"][0]
+    if image_data.get("download_url_list"):
+        return image_data["download_url_list"][0]
+    return ""
+
+
+def _extract_image_urls(data: dict) -> list[str]:
+    """兼容多种 aweme 图文结构，提取图片链接。"""
+    image_urls = []
+
+    candidate_lists = [
+        data.get("images", []),
+        data.get("image_infos", []),
+        data.get("image_post_info", {}).get("images", []),
+        data.get("image_post_info", {}).get("image_list", []),
+    ]
+
+    for items in candidate_lists:
+        if not items:
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            url = _pick_first_url(item)
+            if url:
+                image_urls.append(url)
+        if image_urls:
+            break
+
+    deduped = []
+    seen = set()
+    for url in image_urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        deduped.append(url)
+    return deduped
+
+
 class SearchChannelType(str, Enum):
     """Search channel type enumeration."""
     GENERAL = "aweme_general"
@@ -74,6 +129,8 @@ class DouyinAweme:
     avatar: str = ""
     user_signature: str = ""
     ip_location: str = ""
+    image_urls: list[str] = field(default_factory=list)
+    image_count: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "DouyinAweme":
@@ -81,10 +138,13 @@ class DouyinAweme:
         author = data.get("author", {})
         video = data.get("video", {})
         statistics = data.get("statistics", {})
+        image_urls = _extract_image_urls(data)
 
         cover_url = ""
         if video.get("cover", {}).get("url_list"):
             cover_url = video["cover"]["url_list"][0]
+        elif image_urls:
+            cover_url = image_urls[0]
 
         download_url = ""
         play_addr = video.get("play_addr", {})
@@ -115,6 +175,8 @@ class DouyinAweme:
             avatar=author.get("avatar_thumb", {}).get("url_list", [""])[0] if author.get("avatar_thumb") else "",
             user_signature=author.get("signature", ""),
             ip_location=data.get("ip_label", ""),
+            image_urls=image_urls,
+            image_count=len(image_urls),
         )
 
 

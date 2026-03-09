@@ -22,7 +22,7 @@
 
 ## 功能概览
 
-当前提供 14 个 MCP 工具：
+当前提供 16 个 MCP 工具：
 
 | 工具 | 用途 |
 |------|------|
@@ -38,6 +38,8 @@
 | `get_user_posts` | 获取博主作品列表 |
 | `get_homefeed` | 获取推荐流 |
 | `download_video` | 下载视频到本地 |
+| `download_aweme_images` | 下载图文作品中的全部图片 |
+| `ocr_aweme_images` | 下载并 OCR 识别图片文字 |
 | `transcribe_video` | 单条视频转文字 |
 | `batch_transcribe` | 批量搜索并转写视频 |
 
@@ -139,6 +141,8 @@ claude mcp add douyin \
 - `搜索 5 条关于 AI 编程 的抖音视频，按点赞最多排序`
 - `把第一条视频的前 10 条评论读给我`
 - `下载刚才那条视频到 ~/Downloads`
+- `下载这条图文作品的所有图片`
+- `识别这条图文图片里的文字`
 - `把这条视频转成文字`
 - `批量转写 3 条关于 跨境电商 的抖音视频`
 - `退出抖音登录`
@@ -166,6 +170,11 @@ DOUYIN_COOKIE='sessionid=abc; ttwid=xyz' uv run main.py
 ## 视频转文字说明
 
 只有 `transcribe_video` 和 `batch_transcribe` 需要 ASR 提供商，其他抖音数据工具不需要 API Key。
+如果你要用图片 OCR，再额外安装 OCR 可选依赖：
+
+```bash
+uv sync --extra ocr
+```
 
 当前支持：
 
@@ -199,6 +208,15 @@ DOUYIN_TRANSCRIPT_DIR=/你自己的目录
 DOUYIN_AUTO_SAVE_TRANSCRIPTS=false
 ```
 
+### 长视频现在怎么处理？
+
+现在超过阈值的长音频会自动切片转写，再合并成一个完整结果。
+
+- 默认超过 `600` 秒自动切片
+- 默认每段切成 `480` 秒
+- 默认单段超过 `45MB` 也会触发切片
+- 默认整个视频最长支持到 `7200` 秒
+
 ### 常用环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -207,6 +225,7 @@ DOUYIN_AUTO_SAVE_TRANSCRIPTS=false
 | `DOUYIN_COOKIE_PATH` | `~/.config/douyinmcp/cookies.txt` | Cookie 文件路径 |
 | `DOUYIN_AUTO_SAVE_TRANSCRIPTS` | `true` | 是否自动保存转写文本 |
 | `DOUYIN_TRANSCRIPT_DIR` | `~/.local/share/douyinmcp/transcripts` | 转写文本目录 |
+| `OCR_PROVIDER` | `rapidocr` | OCR 提供商（当前支持 rapidocr） |
 | `ASR_PROVIDER` | `siliconflow` | ASR 提供商 |
 | `ASR_API_KEY` | - | 通用 ASR Key |
 | `ASR_API_URL` | - | 自定义 ASR 地址 |
@@ -222,7 +241,10 @@ DOUYIN_AUTO_SAVE_TRANSCRIPTS=false
 | `VOLCENGINE_RESOURCE_ID` | `volc.bigasr.auc_turbo` | 火山资源标识 |
 | `VOLCENGINE_API_URL` | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash` | 火山接口地址 |
 | `VOLCENGINE_API_KEY` | - | 旧版兼容字段 |
-| `MAX_AUDIO_DURATION` | `600` | 最大转写时长（秒） |
+| `MAX_AUDIO_DURATION` | `7200` | 最大转写时长（秒） |
+| `AUDIO_CHUNK_THRESHOLD` | `600` | 超过该时长自动切片 |
+| `AUDIO_CHUNK_DURATION` | `480` | 每段切片时长 |
+| `AUDIO_CHUNK_MAX_FILE_SIZE_MB` | `45` | 超过该体积自动切片 |
 
 ## 安全与 GitHub 发布建议
 
@@ -274,7 +296,7 @@ UV_CACHE_DIR=/tmp/uv-cache PYTHONPYCACHEPREFIX=/tmp/pycache uv run python -m py_
 
 ```bash
 UV_CACHE_DIR=/tmp/uv-cache PYTHONPYCACHEPREFIX=/tmp/pycache uv run python -m unittest \
-  tests.test_cookie_security tests.test_volcengine_provider tests.test_custom_provider -v
+  tests.test_cookie_security tests.test_media_features tests.test_volcengine_provider tests.test_custom_provider -v
 ```
 
 ### 联机测试

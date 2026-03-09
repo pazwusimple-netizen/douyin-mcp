@@ -1,4 +1,4 @@
-"""抖音 MCP Server — 提供14个工具访问抖音数据。
+"""抖音 MCP Server — 提供16个工具访问抖音数据。
 
 技术架构：
 - fastmcp 框架处理 MCP 协议
@@ -8,10 +8,12 @@
 """
 
 import asyncio
+import json
 import logging
 import random
 import re
 import threading
+from urllib.parse import urlparse
 from dataclasses import asdict
 from datetime import datetime
 
@@ -28,13 +30,18 @@ from .config import (
     COOKIE_STRING,
     LEGACY_COOKIE_PATH,
     ASR_PROVIDER,
+    AUDIO_CHUNK_DURATION,
+    AUDIO_CHUNK_MAX_FILE_SIZE_MB,
+    AUDIO_CHUNK_THRESHOLD,
     AUTO_SAVE_TRANSCRIPTS,
     MAX_AUDIO_DURATION,
+    OCR_PROVIDER,
     TRANSCRIPT_DIR,
 )
 from .errors import (
     CookieExpiredError,
     ASRNotConfiguredError,
+    OCRNotConfiguredError,
     VideoDurationExceededError,
     FFmpegError,
     NoSpeechDetectedError,
@@ -243,6 +250,76 @@ def _persist_transcript(
         return "", str(exc)
 
 
+def _guess_file_suffix(url: str, fallback: str = ".jpg") -> str:
+    """从 URL 猜测文件后缀。"""
+    path = urlparse(url).path.lower()
+    for suffix in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"):
+        if path.endswith(suffix):
+            return suffix
+    return fallback
+
+
+def _format_seconds(total_seconds: float) -> str:
+    """格式化秒数为 HH:MM:SS。"""
+    seconds = max(int(total_seconds), 0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def _should_chunk_audio(duration: float, file_size_mb: float) -> bool:
+    """根据时长和体积决定是否切片。"""
+    return duration > AUDIO_CHUNK_THRESHOLD or file_size_mb > AUDIO_CHUNK_MAX_FILE_SIZE_MB
+
+
+def _merge_segment_transcripts(segments: list[dict]) -> str:
+    """合并分段转写文本，并附带起始时间。"""
+    valid_segments = [segment for segment in segments if segment.get("text", "").strip()]
+    if not valid_segments:
+        return ""
+    if len(valid_segments) == 1:
+        return valid_segments[0]["text"].strip()
+
+    lines = []
+    for segment in valid_segments:
+        start_at = _format_seconds(segment.get("start_seconds", 0))
+        lines.append(f"[{start_at}] {segment['text'].strip()}")
+    return "\n\n".join(lines)
+
+
+def _persist_ocr_result(
+    base_dir: Path,
+    aweme_id: str,
+    title: str,
+    results: list[dict],
+) -> tuple[str, str]:
+    """将 OCR 结果保存为本地文本和 JSON 文件。"""
+    try:
+        all_text = []
+        payload = {
+            "aweme_id": aweme_id,
+            "title": title,
+            "results": results,
+        }
+
+        for item in results:
+            all_text.append(f"# {Path(item['image_path']).name}")
+            all_text.append(item.get("text", "").strip())
+            all_text.append("")
+
+        text_path = base_dir / "ocr.txt"
+        json_path = base_dir / "ocr.json"
+        text_path.write_text("\n".join(all_text).strip() + "\n", encoding="utf-8")
+        json_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return str(text_path), str(json_path)
+    except OSError as exc:
+        logger.warning(f"⚠️ OCR 结果保存失败（{aweme_id}）：{exc}")
+        return "", ""
+
+
 async def _reset_client_cache() -> None:
     """清空缓存的 API client，供 Cookie 更新或退出登录后复用。"""
     global _client, _cookie_signature
@@ -271,7 +348,7 @@ mcp = FastMCP(
     instructions="""
     抖音 MCP Server — 让AI助手能读懂抖音。
 
-    可用工具（共14个）：
+    可用工具（共16个）：
     📊 数据获取：
     - check_login_status: 检查Cookie登录状态
     - logout: 清除本地 Cookie 文件，退出当前登录
@@ -288,6 +365,8 @@ mcp = FastMCP(
 
     📥 视频下载：
     - download_video: 下载视频到本地并返回视频信息
+    - download_aweme_images: 下载图文作品中的全部图片
+    - ocr_aweme_images: 下载并 OCR 识别图文图片内容
 
     🔊 语音转文字：
     - transcribe_video: 视频语音转文字
@@ -754,6 +833,63 @@ async def resolve_share_url(share_url: str) -> dict:
     return result
 
 
+async def _download_aweme_images_internal(aweme_id: str, save_dir: str = "") -> dict:
+    """下载图文作品中的全部图片，并生成 manifest。"""
+    from .video.audio import download_to_path
+
+    client = get_client()
+    video = await client.get_video_by_id(aweme_id)
+    if not video:
+        return {"success": False, "error": f"作品 {aweme_id} 未找到"}
+
+    if not video.image_urls:
+        return {"success": False, "error": "该作品不是图文，或暂未解析到图片链接"}
+
+    root_dir = Path(save_dir).expanduser() if save_dir else (Path.home() / "Downloads")
+    bundle_dir = root_dir / f"{_safe_filename(video.title, fallback=aweme_id)}_{aweme_id}"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    image_paths = []
+    for index, image_url in enumerate(video.image_urls, start=1):
+        suffix = _guess_file_suffix(image_url)
+        target_path = bundle_dir / f"{index:02d}{suffix}"
+        await download_to_path(image_url, str(target_path), cookies=client.cookies)
+        image_paths.append(str(target_path))
+
+    manifest = {
+        "aweme_id": aweme_id,
+        "title": video.title,
+        "author": video.nickname,
+        "aweme_url": video.aweme_url,
+        "image_count": len(image_paths),
+        "image_paths": image_paths,
+        "image_urls": video.image_urls,
+    }
+    manifest_path = bundle_dir / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return {
+        "success": True,
+        "directory": str(bundle_dir),
+        "manifest_path": str(manifest_path),
+        "image_count": len(image_paths),
+        "image_paths": image_paths,
+        "video": {
+            "title": video.title,
+            "aweme_id": aweme_id,
+            "aweme_url": video.aweme_url,
+            "author": video.nickname,
+            "liked_count": video.liked_count,
+            "comment_count": video.comment_count,
+            "share_count": video.share_count,
+            "collected_count": video.collected_count,
+        },
+    }
+
+
 @mcp.tool
 @safe_tool_call
 async def download_video(aweme_id: str, save_dir: str = "") -> dict:
@@ -783,7 +919,7 @@ async def download_video(aweme_id: str, save_dir: str = "") -> dict:
     # 确定保存目录
     if not save_dir:
         save_dir = str(Path.home() / "Downloads")
-    save_path = Path(save_dir)
+    save_path = Path(save_dir).expanduser()
     save_path.mkdir(parents=True, exist_ok=True)
 
     # 用视频标题生成文件名（清理非法字符）
@@ -829,6 +965,64 @@ async def download_video(aweme_id: str, save_dir: str = "") -> dict:
     }
 
 
+@mcp.tool
+@safe_tool_call
+async def download_aweme_images(aweme_id: str, save_dir: str = "") -> dict:
+    """下载抖音图文作品中的全部图片。
+
+    Args:
+        aweme_id: 作品ID（数字字符串）
+        save_dir: 保存目录（默认 ~/Downloads）
+
+    Returns:
+        dict: 包含目录、图片路径和 manifest 文件
+    """
+    return await _download_aweme_images_internal(aweme_id, save_dir=save_dir)
+
+
+@mcp.tool
+@safe_tool_call
+async def ocr_aweme_images(aweme_id: str, save_dir: str = "") -> dict:
+    """下载并 OCR 识别抖音图文作品中的图片文字。
+
+    Args:
+        aweme_id: 作品ID（数字字符串）
+        save_dir: 保存目录（默认 ~/Downloads）
+
+    Returns:
+        dict: 包含 OCR 文本、逐图结果和本地保存路径
+    """
+    if OCR_PROVIDER != "rapidocr":
+        raise OCRNotConfiguredError(OCR_PROVIDER)
+
+    from .ocr import run_ocr
+
+    download_result = await _download_aweme_images_internal(aweme_id, save_dir=save_dir)
+    if not download_result.get("success"):
+        return download_result
+
+    results = []
+    for image_path in download_result["image_paths"]:
+        results.append(run_ocr(image_path))
+
+    text_path, json_path = _persist_ocr_result(
+        Path(download_result["directory"]),
+        aweme_id=aweme_id,
+        title=download_result["video"]["title"],
+        results=results,
+    )
+
+    return {
+        "success": True,
+        "aweme_id": aweme_id,
+        "directory": download_result["directory"],
+        "image_count": download_result["image_count"],
+        "results": results,
+        "ocr_text_path": text_path,
+        "ocr_json_path": json_path,
+    }
+
+
 # ====== 转写核心逻辑（供 transcribe_video 和 batch_transcribe 复用） ======
 
 
@@ -842,6 +1036,7 @@ async def _transcribe_single(aweme_id: str) -> dict:
         extract_audio,
         get_audio_duration,
         cleanup_temp_files,
+        split_audio,
     )
 
     # 检查 ASR 配置
@@ -865,6 +1060,7 @@ async def _transcribe_single(aweme_id: str) -> dict:
 
     video_path = ""
     audio_path = ""
+    segment_paths: list[str] = []
 
     try:
         # 下载视频
@@ -884,12 +1080,36 @@ async def _transcribe_single(aweme_id: str) -> dict:
         video_path = ""
 
         audio_duration = get_audio_duration(audio_path)
+        audio_size_mb = Path(audio_path).stat().st_size / (1024 * 1024)
 
-        # 调用 ASR
-        asr_result = await provider.transcribe(audio_path)
+        segment_results = []
+        if _should_chunk_audio(audio_duration, audio_size_mb):
+            logger.info(
+                "长音频触发切片转写: duration=%.1fs, size=%.1fMB",
+                audio_duration,
+                audio_size_mb,
+            )
+            segment_paths = split_audio(audio_path, segment_duration=AUDIO_CHUNK_DURATION)
+        else:
+            segment_paths = [audio_path]
+
+        current_start = 0.0
+        for segment_path in segment_paths:
+            segment_duration = get_audio_duration(segment_path)
+            asr_result = await provider.transcribe(segment_path)
+            segment_results.append({
+                "path": segment_path,
+                "duration": segment_duration,
+                "start_seconds": current_start,
+                "text": asr_result.text.strip(),
+            })
+            current_start += segment_duration
+
         save_warning = ""
+        merged_text = _merge_segment_transcripts(segment_results)
+        segment_count = len(segment_paths)
 
-        if not asr_result.text:
+        if not merged_text:
             saved_path, save_warning = _persist_transcript(
                 aweme_id=aweme_id,
                 title=video.title,
@@ -913,6 +1133,8 @@ async def _transcribe_single(aweme_id: str) -> dict:
                 "aweme_url": video.aweme_url,
                 "liked_count": video.liked_count,
                 "collected_count": video.collected_count,
+                "segmented": segment_count > 1,
+                "segment_count": segment_count,
                 "saved_path": saved_path,
                 "save_error": save_warning,
             }
@@ -926,12 +1148,12 @@ async def _transcribe_single(aweme_id: str) -> dict:
             collected_count=video.collected_count,
             duration=audio_duration,
             provider=provider.name,
-            text=asr_result.text,
+            text=merged_text,
         )
 
         return {
             "success": True,
-            "text": asr_result.text,
+            "text": merged_text,
             "duration": audio_duration,
             "provider": provider.name,
             "video_title": video.title,
@@ -940,12 +1162,16 @@ async def _transcribe_single(aweme_id: str) -> dict:
             "aweme_url": video.aweme_url,
             "liked_count": video.liked_count,
             "collected_count": video.collected_count,
+            "segmented": segment_count > 1,
+            "segment_count": segment_count,
             "saved_path": saved_path,
             "save_error": save_warning,
         }
 
     finally:
-        cleanup_temp_files(video_path, audio_path)
+        cleanup_temp_files(video_path, audio_path, *segment_paths)
+        if audio_path and segment_paths and audio_path != segment_paths[0]:
+            cleanup_temp_files(str(Path(audio_path).with_name(f"{Path(audio_path).stem}_segments")))
 
 
 @mcp.tool
@@ -1054,6 +1280,8 @@ async def batch_transcribe(
                     "collected_count": result.get("collected_count", ""),
                     "duration_seconds": round(result.get("duration", 0), 1),
                     "transcript": result["text"],
+                    "segmented": result.get("segmented", False),
+                    "segment_count": result.get("segment_count", 1),
                     "saved_path": result.get("saved_path", ""),
                     "save_error": result.get("save_error", ""),
                 })
