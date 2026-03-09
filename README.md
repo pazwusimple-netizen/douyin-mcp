@@ -20,13 +20,20 @@
 - AI 可以把视频语音自动转成文字，并保存为本地 `.txt`
 - 你可以把这些能力接到自己的研究、整理、归档流程里
 
+## 项目规划
+
+如果你想看后续开发方向：
+
+- 研发路线图见 [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- 后续 Agent 接手约定见 [`AGENTS.md`](AGENTS.md)
+
 ## 功能概览
 
 当前提供 16 个 MCP 工具：
 
 | 工具 | 用途 |
 |------|------|
-| `get_login_qrcode` | 获取扫码登录入口 |
+| `get_login_qrcode` | 在终端启动二维码登录流程 |
 | `check_login_status` | 检查当前 Cookie 是否有效 |
 | `logout` | 清除本地 Cookie 文件，退出当前登录 |
 | `search_videos` | 搜索视频 |
@@ -42,6 +49,14 @@
 | `ocr_aweme_images` | 下载并 OCR 识别图片文字 |
 | `transcribe_video` | 单条视频转文字 |
 | `batch_transcribe` | 批量搜索并转写视频 |
+
+功能上现在已经覆盖这几类高频需求：
+
+- 登录态管理：浏览器登录、终端二维码登录、Cookie 文件热重载、退出登录
+- 数据读取：搜索、详情、评论、回复、博主信息、作品列表、推荐流
+- 内容落地：下载视频、下载图文图片、OCR 提取图片文字
+- 知识提取：单视频转写、批量转写、长音频自动切片合并
+- 工具稳定性：统一错误返回，MCP 工具失败时返回结构化错误 dict
 
 ## 快速开始
 
@@ -96,6 +111,14 @@ uv run login.py
 ```
 
 默认会打开浏览器，你用手机抖音扫码或账号密码登录即可。
+
+如果你是在 MCP 客户端里触发 `get_login_qrcode`，后台会等价执行：
+
+```bash
+uv run login.py --api
+```
+
+这时二维码会直接打印在终端里，扫码后 Cookie 会自动保存。
 
 登录成功后，Cookie 默认保存到：
 
@@ -203,6 +226,11 @@ DOUYIN_COOKIE='sessionid=abc; ttwid=xyz' uv run main.py
 
 如果你更习惯本地文件方式，也可以把这些配置写到 `.env.local`，项目启动时会自动读取。
 
+补充两个和稳定性直接相关的行为：
+
+- 登录脚本保存 Cookie 前会自动清洗无效片段，只保留真正的 `key=value` Cookie 对
+- MCP 服务会监测 Cookie 文件修改时间；Cookie 更新后，下次工具调用会自动重建 client，不需要手动重启服务
+
 ## 视频转文字说明
 
 只有 `transcribe_video` 和 `batch_transcribe` 需要 ASR 提供商，其他抖音数据工具不需要 API Key。
@@ -252,6 +280,13 @@ DOUYIN_AUTO_SAVE_TRANSCRIPTS=false
 - 默认每段切成 `480` 秒
 - 默认单段超过 `45MB` 也会触发切片
 - 默认整个视频最长支持到 `7200` 秒
+
+转写结果现在会按实际情况返回这些附加字段：
+
+- `provider`：实际使用的 ASR 服务商
+- `segmented`：是否触发了自动切片
+- `segment_count`：切片数量
+- `saved_path`：保存到本地的文本路径
 
 ### 常用环境变量
 
