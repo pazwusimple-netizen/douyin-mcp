@@ -6,6 +6,7 @@ from typing import Optional, Tuple, List, Dict, Any
 
 import httpx
 
+from .errors import DataFetchError as ToolDataFetchError
 from .models import (
     DouyinAweme,
     DouyinAwemeComment,
@@ -23,9 +24,8 @@ from .token_manager import (
 from .sign import get_a_bogus, SignError
 
 
-class DataFetchError(Exception):
+class DataFetchError(ToolDataFetchError):
     """Exception raised when data fetching fails."""
-    pass
 
 
 class IPBlockError(Exception):

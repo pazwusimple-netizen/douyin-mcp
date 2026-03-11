@@ -1,9 +1,11 @@
 """图文与长音频相关单元测试。"""
 
+from pathlib import Path
+from unittest.mock import patch
 from unittest import TestCase
 
 from src.models import DouyinAweme
-from src.server import _merge_segment_transcripts, _should_chunk_audio
+from src.server import _download_output_dir, _merge_segment_transcripts, _should_chunk_audio
 
 
 class MediaFeatureTest(TestCase):
@@ -49,3 +51,11 @@ class MediaFeatureTest(TestCase):
         ])
         self.assertIn("[00:00:00] 第一段", merged)
         self.assertIn("[00:01:15] 第二段", merged)
+
+    def test_download_output_dir_prefers_explicit_then_env_default(self):
+        with patch("src.server.DOWNLOAD_DIR", "/tmp/from-env"):
+            explicit = _download_output_dir("/tmp/custom-save")
+            defaulted = _download_output_dir("")
+
+        self.assertEqual(explicit, Path("/tmp/custom-save"))
+        self.assertEqual(defaulted, Path("/tmp/from-env"))

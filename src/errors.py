@@ -113,6 +113,17 @@ class DataFetchError(DouyinMCPError):
         )
 
 
+def _error_to_dict(error: DouyinMCPError) -> dict:
+    """将统一异常转换为 MCP 兼容的 dict 响应。"""
+    return {
+        "success": False,
+        "error": error.message,
+        "error_type": type(error).__name__,
+        "suggestion": error.suggestion,
+        "message": error.to_user_message(),
+    }
+
+
 def safe_tool_call(func):
     """装饰器：包裹MCP工具函数，确保任何异常都被捕获并返回友好信息。
 
@@ -127,8 +138,17 @@ def safe_tool_call(func):
         try:
             return await func(*args, **kwargs)
         except DouyinMCPError as e:
-            return e.to_user_message()
+            return _error_to_dict(e)
         except Exception as e:
-            return f"❌ 发生未预期的错误：{type(e).__name__}: {e}\n💡 请检查日志或联系开发者。"
+            return {
+                "success": False,
+                "error": f"{type(e).__name__}: {e}",
+                "error_type": type(e).__name__,
+                "suggestion": "请检查日志或联系开发者。",
+                "message": (
+                    f"❌ 发生未预期的错误：{type(e).__name__}: {e}\n"
+                    "💡 请检查日志或联系开发者。"
+                ),
+            }
 
     return wrapper

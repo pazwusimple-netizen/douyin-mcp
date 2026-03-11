@@ -1,6 +1,6 @@
 [project]
 name = "douyinmcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "抖音 MCP Server — 让 AI 助手能读懂抖音"
 readme = "README.md"
 license = {text = "MIT"}
@@ -14,10 +14,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-browser-login = [
-    "playwright>=1.40",
-    "playwright-stealth>=1.0",
-]
 ocr = [
     "rapidocr-onnxruntime>=1.3.24",
 ]

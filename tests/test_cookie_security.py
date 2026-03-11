@@ -11,44 +11,42 @@ from src.server import _persist_transcript, _validate_cookie, load_cookies, logo
 
 class CookieSecurityTest(TestCase):
     def test_validate_cookie_normalizes_and_removes_invalid_segments(self):
-        raw = " sessionid=abc123 ; bad_segment ; ttwid = xyz ; sessionid_ss=def \n"
+        raw = (
+            " sessionid=abc123 ; bad_segment ; ttwid = xyz ; "
+            "Path=/ ; sessionid_ss=def \n"
+        )
         cleaned = _validate_cookie(raw, source="unit-test")
 
         self.assertIn("sessionid=abc123", cleaned)
         self.assertIn("ttwid=xyz", cleaned)
         self.assertIn("sessionid_ss=def", cleaned)
         self.assertNotIn("bad_segment", cleaned)
+        self.assertNotIn("Path=/", cleaned)
         self.assertNotIn("\n", cleaned)
 
-    def test_load_cookies_uses_legacy_file_as_fallback(self):
+    def test_load_cookies_reads_from_cookie_path(self):
         with TemporaryDirectory() as tmp:
-            new_path = Path(tmp) / "new_cookie.txt"
-            legacy_path = Path(tmp) / "legacy_cookie.txt"
-            legacy_path.write_text("sessionid=legacy123", encoding="utf-8")
+            cookie_file = Path(tmp) / "cookies.txt"
+            cookie_file.write_text("sessionid=file123", encoding="utf-8")
 
             with patch.multiple(
                 "src.server",
                 COOKIE_STRING="",
-                COOKIE_PATH=str(new_path),
-                COOKIE_PATH_FROM_ENV=False,
-                LEGACY_COOKIE_PATH=legacy_path,
+                COOKIE_PATH=str(cookie_file),
             ):
                 cookie = load_cookies()
 
-        self.assertEqual(cookie, "sessionid=legacy123")
+        self.assertEqual(cookie, "sessionid=file123")
 
     def test_load_cookies_prefers_env_cookie(self):
         with TemporaryDirectory() as tmp:
-            new_path = Path(tmp) / "new_cookie.txt"
-            legacy_path = Path(tmp) / "legacy_cookie.txt"
-            legacy_path.write_text("sessionid=legacy123", encoding="utf-8")
+            cookie_file = Path(tmp) / "cookies.txt"
+            cookie_file.write_text("sessionid=file123", encoding="utf-8")
 
             with patch.multiple(
                 "src.server",
                 COOKIE_STRING="sessionid=env123",
-                COOKIE_PATH=str(new_path),
-                COOKIE_PATH_FROM_ENV=False,
-                LEGACY_COOKIE_PATH=legacy_path,
+                COOKIE_PATH=str(cookie_file),
             ):
                 cookie = load_cookies()
 
@@ -56,38 +54,28 @@ class CookieSecurityTest(TestCase):
 
     def test_logout_deletes_cookie_files(self):
         with TemporaryDirectory() as tmp:
-            new_path = Path(tmp) / "new_cookie.txt"
-            legacy_path = Path(tmp) / "legacy_cookie.txt"
-            new_path.write_text("sessionid=new123", encoding="utf-8")
-            legacy_path.write_text("sessionid=legacy123", encoding="utf-8")
+            cookie_file = Path(tmp) / "cookies.txt"
+            cookie_file.write_text("sessionid=new123", encoding="utf-8")
 
             with patch.multiple(
                 "src.server",
                 COOKIE_STRING="",
-                COOKIE_PATH=str(new_path),
-                COOKIE_PATH_FROM_ENV=False,
-                LEGACY_COOKIE_PATH=legacy_path,
+                COOKIE_PATH=str(cookie_file),
             ):
                 result = asyncio.run(logout())
 
         self.assertTrue(result["success"])
-        self.assertEqual(
-            set(result["deleted_files"]),
-            {str(new_path), str(legacy_path)},
-        )
-        self.assertFalse(new_path.exists())
-        self.assertFalse(legacy_path.exists())
+        self.assertIn(str(cookie_file), result["deleted_files"])
+        self.assertFalse(cookie_file.exists())
 
     def test_logout_cannot_clear_env_cookie(self):
         with TemporaryDirectory() as tmp:
-            new_path = Path(tmp) / "new_cookie.txt"
+            cookie_file = Path(tmp) / "cookies.txt"
 
             with patch.multiple(
                 "src.server",
                 COOKIE_STRING="sessionid=env123",
-                COOKIE_PATH=str(new_path),
-                COOKIE_PATH_FROM_ENV=True,
-                LEGACY_COOKIE_PATH=Path(tmp) / "legacy_cookie.txt",
+                COOKIE_PATH=str(cookie_file),
             ):
                 result = asyncio.run(logout())
 

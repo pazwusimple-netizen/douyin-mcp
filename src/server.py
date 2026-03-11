@@ -1,4 +1,4 @@
-"""抖音 MCP Server — 提供16个工具访问抖音数据。
+"""抖音 MCP Server — 提供15个工具访问抖音数据。
 
 技术架构：
 - fastmcp 框架处理 MCP 协议
@@ -25,10 +25,9 @@ from fastmcp import FastMCP
 
 from .client import DouYinApiClient
 from .config import (
-    COOKIE_PATH,
-    COOKIE_PATH_FROM_ENV,
     COOKIE_STRING,
-    LEGACY_COOKIE_PATH,
+    COOKIE_PATH,
+    DEFAULT_COOKIE_PATH,
     ASR_PROVIDER,
     AUDIO_CHUNK_DURATION,
     AUDIO_CHUNK_MAX_FILE_SIZE_MB,
@@ -37,6 +36,7 @@ from .config import (
     MAX_AUDIO_DURATION,
     OCR_PROVIDER,
     TRANSCRIPT_DIR,
+    DOWNLOAD_DIR,
 )
 from .errors import (
     CookieExpiredError,
@@ -47,12 +47,14 @@ from .errors import (
     NoSpeechDetectedError,
     safe_tool_call,
 )
+from .cookies import normalize_cookie_string
 from .models import (
     SearchChannelType,
     SearchSortType,
     PublishTimeType,
     HomeFeedTagIdType,
 )
+
 
 # 日志配置
 logger = logging.getLogger("douyinmcp")
@@ -72,78 +74,31 @@ def _init_ffmpeg():
 
 def _validate_cookie(raw: str, source: str) -> str:
     """验证 Cookie 格式并检查关键字段。"""
-    if not raw:
-        return ""
-
-    # 基础清洗：去除换行符
-    cleaned = raw.replace("\n", "").replace("\r", "").strip()
-    if not cleaned:
-        return ""
-
-    # 规范化 Cookie 片段，只保留 key=value 形式
-    normalized_parts = []
-    invalid_parts = 0
-    for part in cleaned.split(";"):
-        segment = part.strip()
-        if not segment:
-            continue
-        if "=" not in segment:
-            invalid_parts += 1
-            continue
-        key, value = segment.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            invalid_parts += 1
-            continue
-        if any(ch.isspace() for ch in key):
-            invalid_parts += 1
-            continue
-        normalized_parts.append(f"{key}={value}")
-
-    cleaned = "; ".join(normalized_parts)
-    if not cleaned:
+    normalized = normalize_cookie_string(raw)
+    if not normalized.value:
         logger.warning(f"⚠️ {source} Cookie 为空或格式异常（未找到有效 key=value）。")
         return ""
 
-    if invalid_parts:
-        logger.warning(f"⚠️ {source} Cookie 中存在 {invalid_parts} 个无效片段，已自动忽略。")
+    if normalized.invalid_parts:
+        logger.warning(
+            f"⚠️ {source} Cookie 中存在 {normalized.invalid_parts} 个无效片段，已自动忽略。"
+        )
 
     # 检查必要字段
-    has_session = any(k in cleaned for k in ["sessionid=", "sessionid_ss="])
-
-    if not has_session:
+    if not normalized.has_session:
         logger.warning(
             f"⚠️ {source} 中未找到 sessionid，Cookie 可能无效。"
             "  请确保包含 sessionid 或 sessionid_ss 字段。"
         )
     else:
-        logger.info(f"✅ Cookie 已加载（来源: {source}, {len(cleaned)} 字符）")
+        logger.info(f"✅ Cookie 已加载（来源: {source}, {len(normalized.value)} 字符）")
 
-    return cleaned
+    return normalized.value
 
 
 def _candidate_cookie_files() -> list[Path]:
-    """返回按优先级候选的 Cookie 文件路径。"""
-    configured = Path(COOKIE_PATH).expanduser()
-    candidates = [configured]
-
-    # 未显式指定 DOUYIN_COOKIE_PATH 时，兼容旧版项目根目录 cookies.txt
-    if not COOKIE_PATH_FROM_ENV:
-        legacy = LEGACY_COOKIE_PATH.expanduser()
-        if legacy != configured:
-            candidates.append(legacy)
-
-    # 去重（保留顺序）
-    deduped = []
-    seen = set()
-    for path in candidates:
-        key = str(path.resolve()) if path.exists() else str(path)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(path)
-    return deduped
+    """返回 Cookie 文件路径。"""
+    return [Path(COOKIE_PATH).expanduser()]
 
 
 def _cookie_files_signature() -> tuple[tuple[str, float], ...]:
@@ -193,6 +148,13 @@ def load_cookies() -> str:
 def _transcript_output_dir() -> Path:
     """返回转写文本输出目录。"""
     return Path(TRANSCRIPT_DIR).expanduser()
+
+
+def _download_output_dir(save_dir: str = "") -> Path:
+    """返回下载输出目录，优先使用显式传入，其次使用环境配置。"""
+    if save_dir:
+        return Path(save_dir).expanduser()
+    return Path(DOWNLOAD_DIR).expanduser()
 
 
 def _safe_filename(name: str, fallback: str = "transcript") -> str:
@@ -348,7 +310,7 @@ mcp = FastMCP(
     instructions="""
     抖音 MCP Server — 让AI助手能读懂抖音。
 
-    可用工具（共16个）：
+    可用工具（共15个）：
     📊 数据获取：
     - check_login_status: 检查Cookie登录状态
     - logout: 清除本地 Cookie 文件，退出当前登录
@@ -363,7 +325,7 @@ mcp = FastMCP(
     🔗 链接解析：
     - resolve_share_url: 解析分享短链接
 
-    📥 视频下载：
+    📥 媒体下载：
     - download_video: 下载视频到本地并返回视频信息
     - download_aweme_images: 下载图文作品中的全部图片
     - ocr_aweme_images: 下载并 OCR 识别图文图片内容
@@ -375,7 +337,8 @@ mcp = FastMCP(
     配置方式：
     - Cookie: 默认保存到 ~/.config/douyinmcp/cookies.txt（可用 DOUYIN_COOKIE_PATH 覆盖）
     - ASR: 通过环境变量配置 ASR_PROVIDER 和对应 API Key
-    - 转写文本: 默认保存到 ~/.local/share/douyinmcp/transcripts（可用 DOUYIN_TRANSCRIPT_DIR 覆盖）
+    - 转写文本: 默认保存到 ~/Downloads/douyinmcp/transcripts（可用 DOUYIN_TRANSCRIPT_DIR 覆盖）
+    - 下载目录: 默认保存到 ~/Downloads/douyinmcp（可用 DOUYIN_DOWNLOAD_DIR 覆盖）
 
     注意：签名通过本地 V8 引擎生成，无需外部签名服务。
     """,
@@ -721,11 +684,11 @@ async def get_homefeed(
 async def get_login_qrcode() -> dict:
     """获取抖音扫码登录二维码。
 
-    当 Cookie 失效或未登录时，AI 助手可调用此工具获取二维码 URL，
-    展示给用户扫码。扫码成功后 Cookie 会自动保存，无需重启服务。
+    当 Cookie 失效或未登录时，AI 助手可调用此工具启动后台二维码登录流程。
+    二维码会打印到终端中；扫码成功后 Cookie 会自动保存，无需重启服务。
 
     Returns:
-        dict: 包含 qrcode_url（二维码链接）和 message（提示信息）
+        dict: 包含登录状态和提示信息
     """
     import subprocess
     import sys
@@ -745,11 +708,14 @@ async def get_login_qrcode() -> dict:
     # 尝试启动 login.py 子进程（非阻塞）
     try:
         subprocess.Popen(
-            [sys.executable, str(login_script)],
+            [sys.executable, str(login_script), "--api"],
             cwd=str(project_root),
         )
         return {
             "logged_in": False,
+            "launched": True,
+            "mode": "api_qrcode",
+            "cookie_path": str(Path(COOKIE_PATH).expanduser()),
             "message": (
                 "📱 已在后台启动登录程序！\n\n"
                 "请切换到终端窗口，你会看到一个二维码：\n"
@@ -763,13 +729,18 @@ async def get_login_qrcode() -> dict:
     except Exception as e:
         return {
             "logged_in": False,
+            "launched": False,
+            "mode": "api_qrcode",
+            "cookie_path": str(Path(COOKIE_PATH).expanduser()),
             "message": (
                 f"⚠️ 启动登录程序失败（{e}）。\n"
                 "请手动在终端运行:\n"
                 f"  cd {project_root}\n"
-                "  uv run login.py"
+                "  uv run login.py --api"
             ),
         }
+
+
 
 
 
@@ -845,7 +816,7 @@ async def _download_aweme_images_internal(aweme_id: str, save_dir: str = "") -> 
     if not video.image_urls:
         return {"success": False, "error": "该作品不是图文，或暂未解析到图片链接"}
 
-    root_dir = Path(save_dir).expanduser() if save_dir else (Path.home() / "Downloads")
+    root_dir = _download_output_dir(save_dir)
     bundle_dir = root_dir / f"{_safe_filename(video.title, fallback=aweme_id)}_{aweme_id}"
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
@@ -899,7 +870,7 @@ async def download_video(aweme_id: str, save_dir: str = "") -> dict:
 
     Args:
         aweme_id: 视频ID（数字字符串）
-        save_dir: 保存目录（默认 ~/Downloads）
+        save_dir: 保存目录（默认走 DOUYIN_DOWNLOAD_DIR，未配置时为 ~/Downloads）
 
     Returns:
         dict: 包含 file_path(本地路径), file_size_mb, video(视频详情)
@@ -917,9 +888,7 @@ async def download_video(aweme_id: str, save_dir: str = "") -> dict:
         return {"success": False, "error": "无法获取视频下载地址"}
 
     # 确定保存目录
-    if not save_dir:
-        save_dir = str(Path.home() / "Downloads")
-    save_path = Path(save_dir).expanduser()
+    save_path = _download_output_dir(save_dir)
     save_path.mkdir(parents=True, exist_ok=True)
 
     # 用视频标题生成文件名（清理非法字符）
@@ -972,7 +941,7 @@ async def download_aweme_images(aweme_id: str, save_dir: str = "") -> dict:
 
     Args:
         aweme_id: 作品ID（数字字符串）
-        save_dir: 保存目录（默认 ~/Downloads）
+        save_dir: 保存目录（默认走 DOUYIN_DOWNLOAD_DIR，未配置时为 ~/Downloads）
 
     Returns:
         dict: 包含目录、图片路径和 manifest 文件
@@ -987,7 +956,7 @@ async def ocr_aweme_images(aweme_id: str, save_dir: str = "") -> dict:
 
     Args:
         aweme_id: 作品ID（数字字符串）
-        save_dir: 保存目录（默认 ~/Downloads）
+        save_dir: 保存目录（默认走 DOUYIN_DOWNLOAD_DIR，未配置时为 ~/Downloads）
 
     Returns:
         dict: 包含 OCR 文本、逐图结果和本地保存路径

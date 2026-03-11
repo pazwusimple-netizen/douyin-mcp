@@ -17,7 +17,8 @@ import tempfile
 import time
 from pathlib import Path
 
-from src.config import COOKIE_PATH, COOKIE_PATH_FROM_ENV, LEGACY_COOKIE_PATH
+from src.config import COOKIE_PATH
+from src.cookies import normalize_cookie_string
 
 # ====== 常量 ======
 
@@ -33,15 +34,22 @@ USER_AGENT = (
 COOKIE_FILE = Path(COOKIE_PATH).expanduser()
 
 
-def _save_cookies(cookie_str: str):
+def _save_cookies(cookie_str: str) -> bool:
     """将 Cookie 字符串安全写入文件（原子替换 + 0600 权限）。"""
+    normalized = normalize_cookie_string(cookie_str)
+    if not normalized.value:
+        print("❌ 未能提取到有效 Cookie，保存已取消")
+        return False
+    if normalized.invalid_parts:
+        print(f"⚠️ Cookie 中存在 {normalized.invalid_parts} 个无效片段，保存前已自动忽略")
+
     COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     fd, temp_path = tempfile.mkstemp(prefix="cookies_", dir=str(COOKIE_FILE.parent))
     temp_file = Path(temp_path)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(cookie_str)
+            f.write(normalized.value)
             f.flush()
             os.fsync(f.fileno())
 
@@ -68,19 +76,15 @@ def _save_cookies(cookie_str: str):
     gitignore_path = Path(__file__).parent / ".gitignore"
     _ensure_gitignore(gitignore_path)
 
-    if not COOKIE_PATH_FROM_ENV and COOKIE_FILE != LEGACY_COOKIE_PATH:
-        print(f"🔐 默认已使用用户目录保存 Cookie（更安全）：{COOKIE_FILE}")
-    elif COOKIE_FILE == LEGACY_COOKIE_PATH:
-        print("⚠️ 当前 Cookie 仍保存在项目目录。建议设置 DOUYIN_COOKIE_PATH 到用户目录。")
-
-    print(f"🎉 Cookie 已保存到 {COOKIE_FILE}（{len(cookie_str)} 字符）")
+    print(f"🎉 Cookie 已保存到 {COOKIE_FILE}（{len(normalized.value)} 字符）")
+    return True
 
 
 def _clear_cookies() -> bool:
     """删除本地 Cookie 文件。"""
     deleted = False
 
-    for cookie_file in {COOKIE_FILE, LEGACY_COOKIE_PATH.expanduser()}:
+    for cookie_file in [COOKIE_FILE]:
         if not cookie_file.exists():
             continue
         try:
@@ -224,8 +228,7 @@ async def browser_login():
             await browser.close()
 
             if cookie_str:
-                _save_cookies(cookie_str)
-                return True
+                return _save_cookies(cookie_str)
             else:
                 print("❌ 未能提取到有效 Cookie")
                 return False
@@ -392,8 +395,7 @@ async def api_login():
                 if not cookie_str:
                     return False
 
-            _save_cookies(cookie_str)
-            return True
+            return _save_cookies(cookie_str)
 
     return False
 

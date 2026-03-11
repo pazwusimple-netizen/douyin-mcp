@@ -2,7 +2,7 @@
 
 让 AI 助手直接读取抖音内容：搜索视频、查看详情、抓评论、分析博主、下载视频、语音转文字。
 
-这个项目适合几类场景：
+适合的场景：
 
 - 内容选题和行业调研
 - 竞品账号分析
@@ -10,60 +10,109 @@
 - 教程类视频知识提取
 - 把抖音内容接进 Codex / Claude CLI 这类 AI 工作流
 
-## 项目价值
-
-相比手动刷抖音，这个项目的价值不是“替你看视频”，而是把抖音变成一个可被 AI 调用的数据入口：
-
-- AI 可以直接搜索指定关键词的视频
-- AI 可以读取视频详情、评论、回复和博主信息
-- AI 可以下载视频到本地继续处理
-- AI 可以把视频语音自动转成文字，并保存为本地 `.txt`
-- 你可以把这些能力接到自己的研究、整理、归档流程里
-
-## 项目规划
-
-如果你想看后续开发方向：
-
-- 研发路线图见 [`docs/ROADMAP.md`](docs/ROADMAP.md)
-- 后续 Agent 接手约定见 [`AGENTS.md`](AGENTS.md)
-
 ## 功能概览
 
-当前提供 16 个 MCP 工具：
+当前提供 15 个 MCP 工具，分为 5 大类。
 
-| 工具 | 用途 |
-|------|------|
-| `get_login_qrcode` | 在终端启动二维码登录流程 |
-| `check_login_status` | 检查当前 Cookie 是否有效 |
-| `logout` | 清除本地 Cookie 文件，退出当前登录 |
-| `search_videos` | 搜索视频 |
-| `get_video_detail` | 获取单条视频详情 |
-| `get_video_comments` | 获取评论 |
-| `get_sub_comments` | 获取评论回复 |
-| `resolve_share_url` | 解析抖音分享短链接 |
-| `get_user_info` | 获取博主资料 |
-| `get_user_posts` | 获取博主作品列表 |
-| `get_homefeed` | 获取推荐流 |
-| `download_video` | 下载视频到本地 |
-| `download_aweme_images` | 下载图文作品中的全部图片 |
-| `ocr_aweme_images` | 下载并 OCR 识别图片文字 |
-| `transcribe_video` | 单条视频转文字 |
-| `batch_transcribe` | 批量搜索并转写视频 |
+### 📊 数据获取
 
-功能上现在已经覆盖这几类高频需求：
+**搜索视频** `search_videos`
 
-- 登录态管理：浏览器登录、终端二维码登录、Cookie 文件热重载、退出登录
-- 数据读取：搜索、详情、评论、回复、博主信息、作品列表、推荐流
-- 内容落地：下载视频、下载图文图片、OCR 提取图片文字
-- 知识提取：单视频转写、批量转写、长音频自动切片合并
-- 工具稳定性：统一错误返回，MCP 工具失败时返回结构化错误 dict
+支持丰富的筛选条件：
+
+- 3 种排序方式：综合排序 / **按点赞最多** / 按最新发布
+- 4 种时间筛选：不限 / 1天内 / 1周内 / 半年内
+- 4 种搜索类型：综合 / 视频 / 用户 / 直播
+- 支持分页，单次最多返回 20 条结果
+
+```
+"搜索5条关于AI编程的视频，按点赞最多排序，只看一周内的"
+```
+
+**获取视频详情** `get_video_detail`
+
+返回一条视频的完整信息：标题、描述、点赞数、评论数、分享数、收藏数、视频时长（毫秒）、作者信息、下载链接等。
+
+**获取视频评论** `get_video_comments`
+
+支持分页浏览评论列表，每次最多 20 条。返回评论内容、点赞数、回复数、发布时间、评论者信息。
+
+**获取评论回复** `get_sub_comments`
+
+获取某条评论下的子评论（回复），支持分页。适合追踪热门评论下的讨论。
+
+**获取博主资料** `get_user_info`
+
+返回博主的完整资料：昵称、头像、粉丝数、关注数、总获赞数、作品数、简介等。
+
+**获取博主作品列表** `get_user_posts`
+
+按时间顺序列出博主发布的视频，支持分页翻阅历史作品。
+
+**获取推荐流** `get_homefeed`
+
+模拟刷抖音，获取推荐视频流。支持 **16 种内容分类**：全部、知识、体育、汽车、动漫、游戏、影视、生活、旅行、短剧、美食、三农、音乐、动物、亲子、时尚。
+
+```
+"帮我看看抖音美食类的推荐视频"
+```
+
+**检查登录状态** `check_login_status` / **退出登录** `logout`
+
+检查当前 Cookie 是否有效；清除本地 Cookie 文件退出登录。
+
+### 🔗 链接解析
+
+**解析分享链接** `resolve_share_url`
+
+把抖音分享链接（`https://v.douyin.com/xxx`）解析成视频ID，并自动获取视频详情。适合处理朋友转发给你的"复制链接"。
+
+### 📥 媒体下载
+
+**下载视频** `download_video`
+
+下载抖音视频到本地，返回文件路径、文件大小、以及视频的点赞/评论/收藏等完整统计数据。
+
+**下载图文图片** `download_aweme_images`
+
+下载图文作品中的全部图片到本地目录，生成 manifest 文件方便后续处理。
+
+**图文 OCR** `ocr_aweme_images`
+
+下载图文作品的所有图片，并自动进行文字识别（OCR），输出每张图片中的文字内容。适合处理截图类、知识卡片类的图文内容。
+
+> 使用 OCR 需要额外安装一个依赖包：
+> ```bash
+> uv sync --extra ocr
+> ```
+> 这会自动安装 `rapidocr-onnxruntime`（一个纯本地运行的 OCR 引擎），不需要配 API Key，不需要联网，安装完就能用。
+
+### 🔊 语音转文字
+
+**单条转写** `transcribe_video`
+
+完整流程：获取视频详情 → 下载视频 → 提取音频 → 调用 ASR 转写 → 保存为 `.txt` 文件。支持长视频自动切片转写。
+
+**批量转写** `batch_transcribe`
+
+一次搜索 + 批量转写，适合从某个领域批量提取知识。支持 3 种排序（综合/点赞最多/最新），默认取点赞最多的前 3 条转写。
+
+```
+"批量转写3条关于跨境电商的抖音视频，按点赞最多排序"
+```
+
+### 🔐 登录
+
+**扫码登录** `get_login_qrcode`
+
+在终端生成二维码，用手机抖音扫码即可登录。登录后 Cookie 自动保存，无需重启。
 
 ## 快速开始
 
-### 1. 安装依赖
+### 第 1 步：安装依赖
 
 ```bash
-git clone https://github.com/yourname/douyinmcp.git
+git clone https://github.com/wuyuxiang2/douyinmcp.git
 cd douyinmcp
 uv sync
 ```
@@ -75,316 +124,279 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.zshrc
 ```
 
-### 1.1 可选：本地 `.env.local` 配置
-
-如果你不想每次手动 `export` 变量，可以直接在项目根目录放一个 `.env.local`。
-
-先复制示例文件：
-
-```bash
-cp .env.example .env.local
-```
-
-然后只改你需要的字段，例如：
-
-```bash
-ASR_PROVIDER=volcengine
-VOLCENGINE_APP_ID=你的真实AppID
-VOLCENGINE_ACCESS_TOKEN=你的真实AccessToken
-VOLCENGINE_MODEL=bigmodel
-VOLCENGINE_RESOURCE_ID=volc.bigasr.auc_turbo
-VOLCENGINE_API_URL=https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash
-```
-
-加载优先级是：
-
-1. 系统环境变量
-2. 项目根目录 `.env.local`
-3. 项目根目录 `.env`
-
-`.env.local` 默认不会上传到 GitHub。
-
-### 2. 登录抖音
+### 第 2 步：登录抖音
 
 ```bash
 uv run login.py
 ```
 
-默认会打开浏览器，你用手机抖音扫码或账号密码登录即可。
+用手机抖音扫码或账号密码登录即可。登录成功后 Cookie 自动保存到 `~/.config/douyinmcp/cookies.txt`，后续不需要重复登录。
 
-如果你是在 MCP 客户端里触发 `get_login_qrcode`，后台会等价执行：
+### 第 3 步：确认两个路径
 
-```bash
-uv run login.py --api
-```
-
-这时二维码会直接打印在终端里，扫码后 Cookie 会自动保存。
-
-登录成功后，Cookie 默认保存到：
+后面配置 MCP 时需要用到这两个值，先记下来：
 
 ```bash
-~/.config/douyinmcp/cookies.txt
+which uv       # 查看 uv 的完整路径，比如 /Users/你的用户名/.local/bin/uv
+pwd             # 查看当前项目目录的完整路径，比如 /Users/你的用户名/douyinmcp
 ```
 
-如果你想退出登录，可以用两种方式：
+> `which uv` 就是问系统"uv 这个命令装在哪里"，`pwd` 就是问"我现在在哪个文件夹"。
+
+### 第 4 步：添加 MCP
+
+根据你使用的工具，选择对应的配置方式。把示例中的路径替换成第 3 步中你记下的真实路径。
+
+---
+
+#### Codex CLI
 
 ```bash
-uv run login.py --logout
+codex mcp add douyin -- /你的uv路径/uv --directory /你的项目路径/douyinmcp run main.py
 ```
 
-或者直接让 AI 调用：
-
-```text
-退出抖音登录
-```
-
-### 3. 配置到 Codex CLI
-
-先确认两个路径：
+#### Claude CLI
 
 ```bash
-which uv
-pwd
+claude mcp add douyin -- /你的uv路径/uv --directory /你的项目路径/douyinmcp run main.py
 ```
 
-然后添加 MCP：
+#### Claude Desktop（桌面应用）
+
+用**文本编辑器**（推荐 VS Code 或系统自带的 TextEdit）打开配置文件：
 
 ```bash
-codex mcp add douyin -- /Users/你的用户名/.local/bin/uv --directory /项目完整路径/douyinmcp run main.py
+# Mac 上的文件路径
+~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-如果你还要用视频转文字，有两种方式：
+> 如果这个文件不存在，直接新建一个就行。
 
-- 在 MCP 配置里直接传 ASR 环境变量
-- 或者先在项目根目录写 `.env.local`
+在文件中写入（或在已有的 `mcpServers` 里加上 `douyin` 这一段）：
 
-如果你想直接在 MCP 配置里传，以火山引擎为例：
+```json
+{
+  "mcpServers": {
+    "douyin": {
+      "command": "/你的uv路径/uv",
+      "args": ["--directory", "/你的项目路径/douyinmcp", "run", "main.py"]
+    }
+  }
+}
+```
+
+保存后**重启 Claude Desktop**，在对话框底部会出现锤子 🔨 图标，说明 MCP 已连接。
+
+#### Cursor
+
+用**文本编辑器**打开配置文件：
 
 ```bash
+# 项目级配置（仅当前项目生效）
+你的项目路径/.cursor/mcp.json
+
+# 或 全局配置（所有项目生效）
+~/.cursor/mcp.json
+```
+
+> 如果文件不存在，直接新建一个就行。
+
+JSON 格式和 Claude Desktop 一样：
+
+```json
+{
+  "mcpServers": {
+    "douyin": {
+      "command": "/你的uv路径/uv",
+      "args": ["--directory", "/你的项目路径/douyinmcp", "run", "main.py"]
+    }
+  }
+}
+```
+
+保存后，在 Cursor 的 Settings → MCP 中就能看到 douyin 服务已连接。
+
+#### Antigravity（Google Gemini IDE）
+
+在 Antigravity 中打开 MCP Store（左侧边栏），点击 **Manage MCP Servers → View raw config**，会打开配置文件：
+
+```bash
+# 文件路径
+~/.gemini/antigravity/mcp_config.json
+```
+
+在 `mcpServers` 中加上 `douyin`：
+
+```json
+{
+  "mcpServers": {
+    "douyin": {
+      "command": "/你的uv路径/uv",
+      "args": ["--directory", "/你的项目路径/douyinmcp", "run", "main.py"],
+      "timeout": 120000
+    }
+  }
+}
+```
+
+> `timeout` 设大一些（120 秒），因为视频转写等操作可能需要较长时间。
+
+保存后在 MCP Store 中刷新，看到 douyin 显示为 connected 即可。
+
+---
+
+到这里，搜索、看评论、下载视频这些功能已经能用了。
+
+### 第 5 步：配置 ASR 密钥（需要你自己操作！）
+
+> ⚠️ **重要提示**：ASR 密钥包含你的私人 API Key，**请你自己在系统终端里手动配置**，不要让 AI 帮你操作这一步，避免密钥泄露。
+
+如果你需要用"视频转文字"功能，需要配一个 ASR 服务商的 API Key。下面以硅基流动（免费额度最多）为例。
+
+**方式 A：写到 MCP 配置里（推荐）**
+
+适合 CLI 工具（Codex / Claude CLI）：在终端重新添加 MCP 时带上密钥：
+
+```bash
+# Codex CLI
 codex mcp add douyin \
-  --env ASR_PROVIDER=volcengine \
-  --env VOLCENGINE_APP_ID=你的AppID \
-  --env VOLCENGINE_ACCESS_TOKEN='你的AccessToken' \
-  --env VOLCENGINE_MODEL=bigmodel \
-  --env VOLCENGINE_RESOURCE_ID=volc.bigasr.auc_turbo \
-  --env VOLCENGINE_API_URL='https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash' \
-  -- /Users/你的用户名/.local/bin/uv --directory /项目完整路径/douyinmcp run main.py
-```
+  --env ASR_PROVIDER=siliconflow \
+  --env SILICONFLOW_API_KEY='sk-你的Key' \
+  -- /你的uv路径/uv --directory /你的项目路径/douyinmcp run main.py
 
-### 4. 配置到 Claude CLI
-
-```bash
-claude mcp add douyin -- /Users/你的用户名/.local/bin/uv --directory /项目完整路径/douyinmcp run main.py
-```
-
-如果你需要语音转文字，同样补上 ASR 变量即可：
-
-```bash
+# Claude CLI
 claude mcp add douyin \
-  -e ASR_PROVIDER=volcengine \
-  -e VOLCENGINE_APP_ID=你的AppID \
-  -e VOLCENGINE_ACCESS_TOKEN=你的AccessToken \
-  -e VOLCENGINE_MODEL=bigmodel \
-  -e VOLCENGINE_RESOURCE_ID=volc.bigasr.auc_turbo \
-  -e VOLCENGINE_API_URL=https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash \
-  -- /Users/你的用户名/.local/bin/uv --directory /项目完整路径/douyinmcp run main.py
+  -e ASR_PROVIDER=siliconflow \
+  -e SILICONFLOW_API_KEY=你的Key \
+  -- /你的uv路径/uv --directory /你的项目路径/douyinmcp run main.py
 ```
 
-### 5. 你可以直接这样用
+适合 GUI 工具（Claude Desktop / Cursor）：在 JSON 配置中加上 `env` 字段：
 
-把 MCP 配好以后，可以直接对 AI 说：
+```json
+{
+  "mcpServers": {
+    "douyin": {
+      "command": "/你的uv路径/uv",
+      "args": ["--directory", "/你的项目路径/douyinmcp", "run", "main.py"],
+      "env": {
+        "ASR_PROVIDER": "siliconflow",
+        "SILICONFLOW_API_KEY": "sk-你的Key"
+      }
+    }
+  }
+}
+```
+
+**方式 B：写到 `~/.zshrc` 里（全局生效，所有工具都能用）**
+
+```bash
+nano ~/.zshrc
+```
+
+在文件末尾加上：
+
+```bash
+export ASR_PROVIDER=siliconflow
+export SILICONFLOW_API_KEY='sk-你的Key'
+```
+
+保存退出后执行 `source ~/.zshrc` 使其生效。
+
+> 两种方式都是通过系统环境变量传入，编程 AI 无法通过读取项目文件看到你的密钥。
+
+### 第 6 步：开始使用
+
+配好以后，直接对 AI 说就行：
 
 - `帮我检查抖音登录状态`
 - `搜索 5 条关于 AI 编程 的抖音视频，按点赞最多排序`
 - `把第一条视频的前 10 条评论读给我`
 - `下载刚才那条视频到 ~/Downloads`
-- `下载这条图文作品的所有图片`
-- `识别这条图文图片里的文字`
 - `把这条视频转成文字`
 - `批量转写 3 条关于 跨境电商 的抖音视频`
-- `退出抖音登录`
 
-## Cookie 机制说明
+## Cookie 说明
 
-这个项目不会把你的 Cookie 硬编码到代码里。代码只会按顺序读取已有登录态：
+运行 `uv run login.py` 登录后，Cookie 自动保存到 `~/.config/douyinmcp/cookies.txt`，后续使用时程序会自动读取，**你不需要手动操作任何 Cookie 相关的事情**。
 
-1. `DOUYIN_COOKIE` 环境变量
-2. `DOUYIN_COOKIE_PATH` 指向的文件
-3. 默认文件 `~/.config/douyinmcp/cookies.txt`
-4. 旧版兼容文件 `./cookies.txt`
+如果你需要自定义 Cookie 路径，可以设置环境变量 `DOUYIN_COOKIE_PATH`。
 
-所以如果你安装 MCP 后没有被要求重新登录，通常是因为：
+## 文件输出位置
 
-- 你的 MCP 配置里已经带了 `DOUYIN_COOKIE`
-- 或者本机已经存在有效 Cookie 文件
+所有产出文件**默认放在 `~/Downloads/douyinmcp/` 下**，统一管理，不污染项目目录：
 
-如果通过 Shell 传 `DOUYIN_COOKIE`，必须加单引号：
+| 内容 | 默认位置 | 修改方式 |
+|------|---------|---------|
+| Cookie | `~/.config/douyinmcp/cookies.txt` | `DOUYIN_COOKIE_PATH` |
+| 下载视频/图片 | `~/Downloads/douyinmcp/` | `DOUYIN_DOWNLOAD_DIR` |
+| 转写文本 `.txt` | `~/Downloads/douyinmcp/transcripts/` | `DOUYIN_TRANSCRIPT_DIR` |
 
-```bash
-DOUYIN_COOKIE='sessionid=abc; ttwid=xyz' uv run main.py
-```
+> 不需要手动创建这些文件夹，程序会在第一次使用时自动创建。
 
-如果你更习惯本地文件方式，也可以把这些配置写到 `.env.local`，项目启动时会自动读取。
+## 哪些配置需要你填
 
-补充两个和稳定性直接相关的行为：
+绝大多数配置**不需要你动**，代码里都有合理的默认值：
 
-- 登录脚本保存 Cookie 前会自动清洗无效片段，只保留真正的 `key=value` Cookie 对
-- MCP 服务会监测 Cookie 文件修改时间；Cookie 更新后，下次工具调用会自动重建 client，不需要手动重启服务
+| 配置 | 是否需要填 | 说明 |
+|------|-----------|------|
+| Cookie | ✅ 需要，但 `login.py` 自动搞定 | 登录后自动保存 |
+| ASR 密钥 | ⚠️ 只有**视频转文字**才需要 | 搜索、下载、评论等功能不需要 |
+| 下载目录 | ❌ 不需要 | 默认 `~/Downloads/douyinmcp/` |
+| 转写目录 | ❌ 不需要 | 有默认路径 |
+| OCR 配置 | ❌ 不需要 | 额外装一下依赖即可 |
+| 音频切片参数 | ❌ 不需要 | 长视频自动处理 |
 
-## 视频转文字说明
+## 配置读取方式
 
-只有 `transcribe_video` 和 `batch_transcribe` 需要 ASR 提供商，其他抖音数据工具不需要 API Key。
-如果你要用图片 OCR，再额外安装 OCR 可选依赖：
+所有配置**只从系统环境变量读取**，包括：
 
-```bash
-uv sync --extra ocr
-```
+- MCP `--env` 传入的
+- `~/.zshrc` 里 `export` 的
+- 系统级环境变量
 
-当前支持：
+项目目录下不需要创建任何 `.env` 文件。`.env.example` 仅作为环境变量参考文档存在。
 
-- `siliconflow`
-- `volcengine`
-- `openai`
-- `custom`（兼容 OpenAI Whisper 风格接口）
+## 支持的 ASR 服务商
 
-### 转写 `.txt` 会放在哪里？
-
-默认保存到：
-
-```bash
-~/.local/share/douyinmcp/transcripts
-```
-
-每次转写成功后：
-
-- `transcribe_video` 会返回 `saved_path`
-- `batch_transcribe` 也会给每条结果返回 `saved_path`
-
-你也可以改保存目录：
-
-```bash
-DOUYIN_TRANSCRIPT_DIR=/你自己的目录
-```
-
-如果你不想自动保存转写文本，可以关闭：
-
-```bash
-DOUYIN_AUTO_SAVE_TRANSCRIPTS=false
-```
-
-### 长视频现在怎么处理？
-
-现在超过阈值的长音频会自动切片转写，再合并成一个完整结果。
-
-- 默认超过 `600` 秒自动切片
-- 默认每段切成 `480` 秒
-- 默认单段超过 `45MB` 也会触发切片
-- 默认整个视频最长支持到 `7200` 秒
-
-转写结果现在会按实际情况返回这些附加字段：
-
-- `provider`：实际使用的 ASR 服务商
-- `segmented`：是否触发了自动切片
-- `segment_count`：切片数量
-- `saved_path`：保存到本地的文本路径
-
-### 常用环境变量
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `DOUYIN_COOKIE` | - | 直接传 Cookie 字符串 |
-| `DOUYIN_COOKIE_PATH` | `~/.config/douyinmcp/cookies.txt` | Cookie 文件路径 |
-| `DOUYIN_AUTO_SAVE_TRANSCRIPTS` | `true` | 是否自动保存转写文本 |
-| `DOUYIN_TRANSCRIPT_DIR` | `~/.local/share/douyinmcp/transcripts` | 转写文本目录 |
-| `OCR_PROVIDER` | `rapidocr` | OCR 提供商（当前支持 rapidocr） |
-| `ASR_PROVIDER` | `siliconflow` | ASR 提供商 |
-| `ASR_API_KEY` | - | 通用 ASR Key |
-| `ASR_API_URL` | - | 自定义 ASR 地址 |
-| `ASR_MODEL` | - | 自定义 ASR 模型 |
-| `SILICONFLOW_API_KEY` | - | 硅基流动 Key |
-| `OPENAI_API_KEY` | - | OpenAI Key |
-| `OPENAI_MODEL` | `whisper-1` | OpenAI 模型 |
-| `OPENAI_API_URL` | `https://api.openai.com/v1/audio/transcriptions` | OpenAI ASR 地址 |
-| `VOLCENGINE_APP_ID` | - | 火山引擎 App ID |
-| `VOLCENGINE_ACCESS_TOKEN` | - | 火山引擎 Access Token |
-| `VOLCENGINE_MODEL` | `bigmodel` | 火山模型 |
-| `VOLCENGINE_MODEL_VERSION` | - | 火山模型版本 |
-| `VOLCENGINE_RESOURCE_ID` | `volc.bigasr.auc_turbo` | 火山资源标识 |
-| `VOLCENGINE_API_URL` | `https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash` | 火山接口地址 |
-| `VOLCENGINE_API_KEY` | - | 旧版兼容字段 |
-| `MAX_AUDIO_DURATION` | `7200` | 最大转写时长（秒） |
-| `AUDIO_CHUNK_THRESHOLD` | `600` | 超过该时长自动切片 |
-| `AUDIO_CHUNK_DURATION` | `480` | 每段切片时长 |
-| `AUDIO_CHUNK_MAX_FILE_SIZE_MB` | `45` | 超过该体积自动切片 |
-
-## 安全与 GitHub 发布建议
-
-为了准备公开仓库，建议遵守这几条：
-
-- 不要把真实 `cookies.txt` 放在项目根目录
-- 不要把下载的视频、临时研究目录、缓存文件一起提交
-- 不要把 API Key 直接写进 README、代码或截图
-- 如果历史里曾提交过 Cookie 或 Key，公开前先轮换凭证
-
-本项目默认已经把这些内容往“仓库外”放：
-
-- Cookie 默认放 `~/.config/douyinmcp/cookies.txt`
-- 转写文本默认放 `~/.local/share/douyinmcp/transcripts`
-- 项目根目录下的 `cookies.txt`、`downloads/`、`transcripts/`、临时目录都不应进入 Git
+| 服务商 | 配置变量 | 说明 |
+|--------|---------|------|
+| `siliconflow`（默认） | `SILICONFLOW_API_KEY` | 硅基流动，使用 SenseVoice 模型 |
+| `volcengine` | `VOLCENGINE_APP_ID` + `VOLCENGINE_ACCESS_TOKEN` | 火山引擎（字节跳动） |
+| `openai` | `OPENAI_API_KEY` | OpenAI Whisper |
+| `custom` | `ASR_API_URL` + `ASR_API_KEY` | 任何兼容 OpenAI Whisper 接口的服务 |
 
 ## 项目结构
 
-```text
+```
 douyinmcp/
-├── main.py
-├── login.py
-├── pyproject.toml
+├── main.py              # 入口
+├── login.py             # 扫码登录
+├── pyproject.toml       # 依赖管理
 ├── src/
-│   ├── server.py
-│   ├── client.py
-│   ├── config.py
-│   ├── errors.py
-│   ├── models.py
-│   ├── sign.py
-│   ├── token_manager.py
-│   ├── asr/
-│   └── video/
-├── tests/
-├── test_tools.py
+│   ├── server.py        # MCP 工具定义（15个工具）
+│   ├── client.py        # 抖音 API 客户端
+│   ├── config.py        # 配置管理
+│   ├── errors.py        # 统一错误处理
+│   ├── models.py        # 数据模型
+│   ├── sign.py          # 签名生成（本地 V8 引擎）
+│   ├── cookies.py       # Cookie 解析
+│   ├── token_manager.py # Token 管理
+│   ├── ocr.py           # OCR 识别
+│   ├── asr/             # 语音转文字（4种服务商）
+│   └── video/           # 视频处理和音频提取
+├── tests/               # 单元测试和联机测试
 └── LICENSE
 ```
 
-## 本地开发
-
-### 语法检查
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache PYTHONPYCACHEPREFIX=/tmp/pycache uv run python -m py_compile \
-  main.py login.py test_tools.py src/*.py src/asr/*.py src/video/*.py tests/*.py
-```
-
-### 离线单元测试
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache PYTHONPYCACHEPREFIX=/tmp/pycache uv run python -m unittest \
-  tests.test_cookie_security tests.test_media_features tests.test_volcengine_provider tests.test_custom_provider -v
-```
-
-### 联机测试
-
-先准备好有效 Cookie，再运行：
-
-```bash
-UV_CACHE_DIR=/tmp/uv-cache PYTHONPYCACHEPREFIX=/tmp/pycache uv run python tests/test_all.py
-```
 
 ## Acknowledgements
 
-本项目在早期开发阶段，参考过仓库内曾保留的 `_reference_repo` 对照代码与文档思路，用来帮助梳理抖音网页接口结构、字段映射和 MCP 工具设计方向。
+本项目在早期开发阶段参考了 [hhy5562877/douyin_mcp](https://github.com/hhy5562877/douyin_mcp) 的代码结构和接口设计思路，用来帮助梳理抖音网页接口结构、字段映射和 MCP 工具设计方向。感谢原作者提供的启发和思路。
 
-感谢相关开源作者提供的启发和思路。
+## 免责声明
 
-公开发布版本中，开发期用的对照目录已经移除，避免把无关材料一起带进正式仓库。
+本项目仅供学习和研究使用。使用本项目获取的数据应遵守抖音平台的服务条款和相关法律法规。请勿将本项目用于任何商业用途或违法行为。
 
 ## License
 

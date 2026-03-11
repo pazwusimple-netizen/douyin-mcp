@@ -1,50 +1,9 @@
-"""配置管理模块 — 从环境变量和本地 .env 文件读取配置。"""
+"""配置管理模块 — 从系统环境变量读取配置。"""
 
 import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-
-def _strip_optional_quotes(value: str) -> str:
-    """移除 .env 值外层成对引号。"""
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-        return value[1:-1]
-    return value
-
-
-def _load_env_file(env_file: Path, override: bool = False) -> None:
-    """读取简单的 KEY=VALUE 文件到环境变量。"""
-    if not env_file.exists() or not env_file.is_file():
-        return
-
-    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[7:].strip()
-        if "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if not key:
-            continue
-
-        if not override and key in os.environ:
-            continue
-        os.environ[key] = _strip_optional_quotes(value)
-
-
-def _load_project_env() -> None:
-    """按优先级加载项目本地环境文件。"""
-    _load_env_file(PROJECT_ROOT / ".env.local", override=False)
-    _load_env_file(PROJECT_ROOT / ".env", override=False)
-
-
-_load_project_env()
 
 
 def _default_cookie_path() -> Path:
@@ -58,13 +17,13 @@ def _default_cookie_path() -> Path:
 
 
 def _default_transcript_dir() -> Path:
-    """返回默认转写输出目录（用户目录，避免误提交到仓库）。"""
-    xdg_data_home = os.getenv("XDG_DATA_HOME", "").strip()
-    if xdg_data_home:
-        base = Path(xdg_data_home).expanduser()
-    else:
-        base = Path.home() / ".local" / "share"
-    return base / "douyinmcp" / "transcripts"
+    """返回默认转写输出目录（和下载目录放在同一个父文件夹下）。"""
+    return Path.home() / "Downloads" / "douyinmcp" / "transcripts"
+
+
+def _default_download_dir() -> Path:
+    """返回默认下载目录。"""
+    return Path.home() / "Downloads" / "douyinmcp"
 
 
 # ====== ASR（语音转文字）配置 ======
@@ -126,10 +85,8 @@ AUDIO_CHUNK_MAX_FILE_SIZE_MB = int(os.getenv("AUDIO_CHUNK_MAX_FILE_SIZE_MB", "45
 # 方式1：环境变量直传 Cookie 字符串（优先级最高，适合 Docker/CI）
 COOKIE_STRING = os.getenv("DOUYIN_COOKIE", "").strip()
 
-# 方式2：从文件读取（默认放用户目录；兼容老项目根目录）
+# 方式2：从文件读取（默认放用户目录）
 DEFAULT_COOKIE_PATH = _default_cookie_path()
-LEGACY_COOKIE_PATH = PROJECT_ROOT / "cookies.txt"
-COOKIE_PATH_FROM_ENV = "DOUYIN_COOKIE_PATH" in os.environ
 COOKIE_PATH = os.getenv(
     "DOUYIN_COOKIE_PATH",
     str(DEFAULT_COOKIE_PATH),
@@ -145,6 +102,10 @@ AUTO_SAVE_TRANSCRIPTS = os.getenv("DOUYIN_AUTO_SAVE_TRANSCRIPTS", "true").strip(
 TRANSCRIPT_DIR = os.getenv(
     "DOUYIN_TRANSCRIPT_DIR",
     str(_default_transcript_dir()),
+)
+DOWNLOAD_DIR = os.getenv(
+    "DOUYIN_DOWNLOAD_DIR",
+    str(_default_download_dir()),
 )
 
 # ====== OCR 配置 ======

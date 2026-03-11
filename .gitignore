@@ -40,3 +40,9 @@ downloads/
 *.mp3
 *.wav
 transcripts/
+publish-drafts/
+
+# Agent / AI
+.gemini/
+.agents/
+AGENTS.md
