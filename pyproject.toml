@@ -11,6 +11,7 @@ dependencies = [
     "mini-racer>=0.12.4",
     "static-ffmpeg>=3.0",
     "qrcode>=7.0",
+    "playwright>=1.58.0",
 ]
 
 [project.optional-dependencies]

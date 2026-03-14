@@ -489,7 +489,8 @@ async def search_videos(
     sort_enum = SearchSortType(sort_type) if sort_type in [0, 1, 2] else SearchSortType.GENERAL
     time_enum = PublishTimeType(publish_time) if publish_time in [0, 1, 7, 180] else PublishTimeType.UNLIMITED
 
-    return await client.search_info_by_keyword(
+    # 首次搜索
+    result = await client.search_info_by_keyword(
         keyword=keyword,
         offset=offset,
         count=count,
@@ -497,6 +498,55 @@ async def search_videos(
         sort_type=sort_enum,
         publish_time=time_enum,
     )
+
+    # ========== verify_check 检测与自动重试 ==========
+    nil_info = result.get("search_nil_info", {})
+    if nil_info.get("search_nil_type") == "verify_check":
+        logger.warning(f"⚠️ 搜索「{keyword}」被 verify_check 拦截，尝试刷新 token 后重试…")
+
+        # 刷新 verify_params（重新获取 msToken/webid/verifyFp）
+        client.verify_params = None
+        await client._init_verify_params()
+
+        # 等待 8~15 秒后重试（留足冷却时间）
+        retry_wait = random.uniform(8.0, 15.0)
+        logger.info(f"⏳ 等待 {retry_wait:.1f} 秒后重试搜索…")
+        await asyncio.sleep(retry_wait)
+
+        # 重试搜索
+        result = await client.search_info_by_keyword(
+            keyword=keyword,
+            offset=offset,
+            count=count,
+            search_channel=channel,
+            sort_type=sort_enum,
+            publish_time=time_enum,
+        )
+
+        # 如果重试后仍被拦截，自动回退到浏览器搜索
+        nil_info_retry = result.get("search_nil_info", {})
+        if nil_info_retry.get("search_nil_type") == "verify_check":
+            logger.warning(f"⚠️ 搜索「{keyword}」HTTP重试仍被拦截，回退到浏览器搜索…")
+            try:
+                from .browser_search import get_browser_search_provider
+                provider = await get_browser_search_provider()
+                browser_result = await provider.search(keyword, count)
+                if browser_result.get("results"):
+                    logger.info(f"✅ 浏览器搜索「{keyword}」成功，获得 {browser_result['count']} 条结果")
+                    return browser_result
+                else:
+                    logger.warning(f"❌ 浏览器搜索「{keyword}」也未获取到结果")
+            except Exception as e:
+                logger.error(f"❌ 浏览器搜索失败: {e}")
+            result["_verify_check_warning"] = (
+                "搜索被抖音风控系统拦截（verify_check），浏览器搜索也未成功。"
+                "建议：1) 等待几分钟后重试 "
+                "2) 更换Cookie重新登录"
+            )
+        else:
+            logger.info(f"✅ 搜索「{keyword}」重试成功")
+
+    return result
 
 
 @mcp.tool

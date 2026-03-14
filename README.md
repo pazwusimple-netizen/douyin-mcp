@@ -2,7 +2,18 @@
 
 让 AI 助手直接读取抖音内容：搜索视频、查看详情、抓评论、分析博主、下载视频、语音转文字。
 
-适合的场景：
+### ✨ 相比同类项目的优势
+
+| 特性 | 本项目 | 其他抖音 MCP |
+|------|--------|-------------|
+| **搜索防护** | 自动频率控制 + verify_check 自动重试 + Playwright 浏览器回退 | 搜索容易被封 |
+| **语音转文字** | 4 种 ASR 服务商可选，支持长视频自动切片 | 大多不支持 |
+| **视频下载** | 无水印下载 + 图文下载 + OCR 文字识别 | 仅基础下载 |
+| **工具数量** | 15 个 MCP 工具覆盖搜索/详情/评论/下载/转写 | 通常 3-5 个 |
+| **签名方案** | 本地 V8 引擎生成 a_bogus，不依赖外部服务 | 依赖第三方或不签名 |
+| **Cookie 管理** | Playwright 浏览器扫码登录，自动保存和刷新 | 手动复制粘贴 |
+
+### 适合的场景
 
 - 内容选题和行业调研
 - 竞品账号分析
@@ -12,7 +23,7 @@
 
 ## 功能概览
 
-当前提供 15 个 MCP 工具，分为 5 大类。
+当前提供 15 个 MCP 工具，分为 5 大类。搜索工具内置**三层防护机制**，大幅降低被抖音风控拦截的概率。
 
 ### 📊 数据获取
 
@@ -24,6 +35,7 @@
 - 4 种时间筛选：不限 / 1天内 / 1周内 / 半年内
 - 4 种搜索类型：综合 / 视频 / 用户 / 直播
 - 支持分页，单次最多返回 20 条结果
+- 🛡️ **内置三层搜索防护**：频率控制（8-10秒间隔）→ verify_check 自动重试 → Playwright 无头浏览器回退
 
 ```
 "搜索5条关于AI编程的视频，按点赞最多排序，只看一周内的"
@@ -370,24 +382,45 @@ export SILICONFLOW_API_KEY='sk-你的Key'
 
 ```
 douyinmcp/
-├── main.py              # 入口
-├── login.py             # 扫码登录
-├── pyproject.toml       # 依赖管理
+├── main.py                # 入口
+├── login.py               # Playwright 浏览器扫码登录
+├── pyproject.toml         # 依赖管理
 ├── src/
-│   ├── server.py        # MCP 工具定义（15个工具）
-│   ├── client.py        # 抖音 API 客户端
-│   ├── config.py        # 配置管理
-│   ├── errors.py        # 统一错误处理
-│   ├── models.py        # 数据模型
-│   ├── sign.py          # 签名生成（本地 V8 引擎）
-│   ├── cookies.py       # Cookie 解析
-│   ├── token_manager.py # Token 管理
-│   ├── ocr.py           # OCR 识别
-│   ├── asr/             # 语音转文字（4种服务商）
-│   └── video/           # 视频处理和音频提取
-├── tests/               # 单元测试和联机测试
+│   ├── server.py          # MCP 工具定义（15个工具）
+│   ├── client.py          # 抖音 API 客户端（含搜索防护）
+│   ├── browser_search.py  # Playwright 浏览器搜索回退
+│   ├── config.py          # 配置管理
+│   ├── errors.py          # 统一错误处理
+│   ├── models.py          # 数据模型
+│   ├── sign.py            # a_bogus 签名（本地 V8 引擎）
+│   ├── cookies.py         # Cookie 解析
+│   ├── token_manager.py   # Token / msToken 管理
+│   ├── ocr.py             # OCR 图文识别
+│   ├── asr/               # 语音转文字（4种服务商）
+│   └── video/             # 视频处理和音频提取
+├── tests/                 # 单元测试
 └── LICENSE
 ```
+
+## 搜索防护机制
+
+抖音搜索 API 有严格的频率限制，连续搜索会触发 `verify_check` 验证码拦截。本项目实现了**三层防护**：
+
+```
+搜索请求 → 第1层：频率控制（8-10秒随机间隔）
+         → 第2层：verify_check 自动重试（刷新 token + 8-15秒冷却）
+         → 第3层：Playwright 无头浏览器回退（真实浏览器环境，不触发验证码）
+```
+
+| 防护层 | 原理 | 效果 |
+|--------|------|------|
+| 频率控制 | 搜索间自动等待 8-10 秒，模拟人类搜索节奏 | 预防 verify_check |
+| search_id 链式传递 | 每次搜索把上一次的 logid 传给下一次 | 模拟翻页行为 |
+| msToken 优先级链 | Cookie真实token > 首页获取 > API生成 | 提高请求可信度 |
+| verify_check 重试 | 自动检测 → 刷新 token → 冷却 → 重试 | 自动恢复 |
+| Playwright 回退 | 启动无头 Chromium + stealth 脚本 + Cookie 注入 | 终极保险 |
+
+> Playwright 浏览器回退需要首次运行 `uv run playwright install chromium` 安装浏览器。
 
 
 ## Acknowledgements

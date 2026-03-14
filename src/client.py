@@ -1,6 +1,9 @@
 """Douyin API Client implementation."""
 
+import asyncio
 import json
+import random
+import time
 import urllib.parse
 from typing import Optional, Tuple, List, Dict, Any
 
@@ -84,11 +87,64 @@ class DouYinApiClient:
         self.proxy = proxy
         self.user_agent = DOUYIN_FIXED_USER_AGENT
         self.verify_params: Optional[VerifyParams] = None
+        # 搜索频率控制：记录上次搜索时间，避免频繁搜索触发 verify_check
+        self._last_search_time: float = 0.0
+        # search_id 链式传递：上一次搜索返回的 logid 给下一次用（模拟翻页行为）
+        self._last_search_id: str = ""
+        # 从 Cookie 中解析 msToken（真实浏览器生成的，质量最高）
+        self._cookie_ms_token: str = self._extract_ms_token_from_cookie(cookies)
+        # 从 douyin.com 首页获取的真实 msToken（质量次高）
+        self._page_ms_token: str = ""
         # 持久化 HTTP 客户端，复用连接池（避免每次请求重建 TCP+TLS）
         self._http_client = httpx.AsyncClient(
             proxy=self.proxy,
             timeout=10,
         )
+
+    @staticmethod
+    def _extract_ms_token_from_cookie(cookie_str: str) -> str:
+        """从 Cookie 字符串中提取 msToken。"""
+        if not cookie_str:
+            return ""
+        for part in cookie_str.split(";"):
+            part = part.strip()
+            if part.startswith("msToken="):
+                token = part.split("=", 1)[1]
+                if len(token) > 50:  # 有效的msToken至少50+字符
+                    return token
+        return ""
+
+    async def _fetch_ms_token_from_page(self) -> str:
+        """
+        通过访问 douyin.com 首页获取真实 msToken。
+        抖音首页会在 Set-Cookie 中返回 msToken。
+        """
+        if self._page_ms_token:
+            return self._page_ms_token
+        try:
+            headers = self._get_headers()
+            async with httpx.AsyncClient(proxy=self.proxy, timeout=15) as client:
+                resp = await client.get(
+                    "https://www.douyin.com/",
+                    headers=headers,
+                    follow_redirects=True,
+                )
+                # 从响应的 Set-Cookie 中提取 msToken
+                for cookie_header in resp.headers.get_list("set-cookie"):
+                    if "msToken=" in cookie_header:
+                        token_part = cookie_header.split("msToken=", 1)[1]
+                        token = token_part.split(";", 1)[0]
+                        if len(token) > 50:
+                            self._page_ms_token = token
+                            return token
+                # 备用：从 cookies 对象中获取
+                ms_token = resp.cookies.get("msToken", "")
+                if len(ms_token) > 50:
+                    self._page_ms_token = ms_token
+                    return ms_token
+        except Exception:
+            pass
+        return ""
 
     async def close(self):
         """关闭 HTTP 客户端，释放连接池资源。"""
@@ -163,11 +219,13 @@ class DouYinApiClient:
         await self._init_verify_params()
 
         # Merge common params and verify params
+        # msToken 优先级：Cookie真实token > 首页Set-Cookie > API生成/fake
+        ms_token = self._cookie_ms_token or self._page_ms_token or self.verify_params.ms_token
         all_params = {
             **self.COMMON_PARAMS,
             **params,
             "webid": self.verify_params.webid,
-            "msToken": self.verify_params.ms_token,
+            "msToken": ms_token,
         }
 
         query_string = urllib.parse.urlencode(all_params)
@@ -237,6 +295,22 @@ class DouYinApiClient:
         Returns:
             Search results dict
         """
+        await self._init_verify_params()
+
+        # ========== 频率控制（防止连续搜索触发 verify_check） ==========
+        now = time.monotonic()
+        elapsed = now - self._last_search_time
+        # 搜索间隔 8~10 秒（边界测试验证：2秒间隔连续15次也全部通过，8秒已非常安全）
+        min_interval = 8.0 + random.uniform(0, 2.0)
+        if self._last_search_time > 0 and elapsed < min_interval:
+            wait_time = min_interval - elapsed
+            await asyncio.sleep(wait_time)
+        self._last_search_time = time.monotonic()
+
+        # 尝试获取真实msToken（优先级：Cookie > 首页获取 > API生成 > fake）
+        if not self._cookie_ms_token and not self._page_ms_token:
+            await self._fetch_ms_token_from_page()
+
         params = {
             "keyword": keyword,
             "offset": offset,
@@ -248,9 +322,14 @@ class DouYinApiClient:
             "search_source": "tab_search",
             "query_correct_type": "1",
             "is_filter_search": "0",
-            "from_group_id": "7378810571505847586",
+            "from_group_id": "",
             "need_filter_settings": "1",
             "list_type": "multi",
+            # 链式 search_id：用上一次搜索的 logid，让抖音认为是同一搜索会话的翻页
+            "search_id": self._last_search_id,
+            # 添加 verifyFp/fp（与其他正常API保持一致）
+            "verifyFp": self.verify_params.verify_fp,
+            "fp": self.verify_params.verify_fp,
         }
 
         # Add filter_selected if sort or time filter is set
@@ -261,13 +340,25 @@ class DouYinApiClient:
                 "publish_time": str(publish_time.value)
             })
 
-        # Search endpoint doesn't need signature
-        return await self._request(
+        # 搜索请求的 Referer 应为搜索页面（更符合真实浏览器行为）
+        headers = self._get_headers()
+        headers["Referer"] = f"https://www.douyin.com/search/{urllib.parse.quote(keyword)}?aid=3a3cec5a-9e27-4040-b6aa-ef548c2c1138&type=general"
+
+        # 搜索请求不需要 a_bogus 签名（与 MediaCrawler 等主流方案一致）
+        result = await self._request(
             "GET",
             "/aweme/v1/web/general/search/single/",
             params,
-            need_sign=False
+            need_sign=False,
+            headers=headers,
         )
+
+        # 保存 search_id 用于链式传递（翻页搜索）
+        logid = result.get("extra", {}).get("logid", "")
+        if logid:
+            self._last_search_id = logid
+
+        return result
 
     async def get_video_by_id(self, aweme_id: str) -> Optional[DouyinAweme]:
         """
